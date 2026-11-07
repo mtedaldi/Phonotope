@@ -67,6 +67,25 @@ Every template instance can be shown **collapsed** (a single node with its
 sliders) or **opened** (the internal graph). Opening never breaks anything; it
 is progressive disclosure, not a mode switch.
 
+## 6a. Seeds in the editor
+
+- **Scene seed:** generated when a project is created, shown in a text field with
+  a **Generate** button next to it. The user can type any text as a seed.
+- **Seed mode** (checkbox): the player either uses the scene seed (`fixed`) or
+  draws a new one at every start (`fresh`). Stored in the scene.
+- **Editor preview** has its own switch (fixed or fresh), so authors can tune with
+  a stable run and still test variety.
+- **Copying a node or group:** the user chooses *new seed* (default) or
+  *keep seed*. Keeping means writing the original's effective seed as an
+  explicit seed on the copy, so it produces exactly the same stream. The UI
+  warns that identical seeds produce identical sound, which correlates and
+  adds coherently if both play at the same time (see architecture 4a).
+- **Pinning a group** (seed anchor) makes the whole group sound identical wherever
+  it is placed, which is useful for a favorite sea or a template shipped with
+  a reference sound.
+- **Player:** shows the current seed, offers "reroll", and "keep this run",
+  which switches the scene to `fixed` with that seed.
+
 ## 7. Instantiation: copy with provenance
 
 Decision (ADR 0008): inserting a template **copies** its graph into the scene
@@ -96,6 +115,9 @@ Presets are saved parameter sets for a template instance. Both can combine.
 - User-defined dashboard layout and grouping
 - Template categories and search in the editor
 - Slider values as modulation sources (link a control to a slow LFO)
+- Seed sharing as a social feature: short text seeds (any language) exchanged
+  together with the scene name and format version, so others can reproduce
+  a favorite run. Only works with the same scene and the same PRNG/hash version.
 
 ## 10. Decisions on earlier open questions (2026-11-06)
 

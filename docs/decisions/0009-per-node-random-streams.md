@@ -1,6 +1,6 @@
 # 0009 Per-node deterministic random streams
 
-Status: accepted in principle (2026-11-06); algorithm choice open
+Status: accepted (2026-11-06); algorithm and hash choice open
 
 ## Context
 Randomness is central (events, noise, variation). We want reproducibility for
@@ -22,3 +22,13 @@ identical (correlated) sound.
 - Reproducible across players; no coupling between nodes.
 - Identical noise in two nodes is avoided by construction.
 - Exact reproducibility is not promised under live parameter changes.
+
+## Update (2026-11-06): configurable seeds and seed anchors
+- Seeds are strings, user-visible, generated at project creation, replaceable by
+  typed text.
+- Groups and nodes may carry an explicit seed (seed anchor). Streams below an
+  anchor derive from the anchor and the path relative to it.
+- Copying a node or group offers *new seed* (default) or *keep seed*.
+- `playback.seedMode` (`fixed` or `fresh`, default `fresh`) selects what the
+  player uses.
+- Ids are stable and internal; labels are separate.

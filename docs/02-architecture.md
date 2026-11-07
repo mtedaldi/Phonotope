@@ -68,14 +68,23 @@ The audio graph renders sound; a scheduler decides *when* things happen.
   about +3 dB for uncorrelated sources) and panning/delay produces comb-filter
   coloration. The same applies to identical loops starting in phase, so start
   offsets are drawn from the streams too.
+- Correlation is a hazard by default, not a prohibition: the tools warn but never
+  forbid identical seeds. Deliberate use (phasing, beating, flanging-like
+  effects, exact duplicates) is a legitimate creative technique.
 - The format specifies the PRNG algorithm and the seed-derivation hash, so every
   player produces the same streams from the same seed (see ADR 0009).
 - Reproducibility means: same scene, same seed, same inputs gives the same
   event sequence in **scene time** (not wall-clock time). Live parameter
   changes and interruptions can legitimately alter a run.
-- Proposed default (to be confirmed): the player draws a **fresh scene seed at
-  every start**, so each night differs. The editor can pin a seed for debugging,
-  and a seed can be saved to share a run someone liked.
+- Seeds are user-visible and configurable: a scene seed is generated when a
+  project is created and can be replaced by a typed one. Groups and nodes may
+  carry their own explicit seed (a **seed anchor**); see 03-scene-format.md
+  section 10 and editor concepts section 6a.
+- The scene declares a **seed mode**: `fixed` (the player uses the scene seed,
+  every run is identical) or `fresh` (the player draws a new seed at every
+  start). Proposed default: `fresh`, so each night differs.
+- The player may show the current seed, offer "reroll", and let the listener
+  keep a run they liked.
 
 ## 5. Simplified spatial model
 

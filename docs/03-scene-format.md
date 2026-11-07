@@ -25,7 +25,8 @@ development.
 | `formatVersion` | Format version, `major.minor` |
 | `requiredFeatures` | Optional list of feature flags a player must support (section 12) |
 | `meta` | Title, author, description, license of the scene itself |
-| `seed` | Scene seed; each random consumer derives its own stream (section 10). If absent, the player draws a fresh seed per start |
+| `seed` | Scene seed as a string (numbers are treated as their decimal text); each random consumer derives its own stream (section 10) |
+| `playback` | Player behavior hints, currently `seedMode`: `fixed` or `fresh` (default `fresh`) |
 | `assets` | List of audio assets with source, license, attribution |
 | `rooms` | Reverb zones (algorithmic parameters or an impulse-response asset) |
 | `nodes` | Node definitions (id, type, parameters) |
@@ -125,8 +126,22 @@ template instances; whether macro curves are named presets only or free-form.
 - The format names one PRNG algorithm and one hash for seed derivation, so all
   players derive identical streams. The exact choices are fixed in ADR 0009
   before format 0.1 is frozen.
-- Stream seed = hash(scene seed, node path). The node path includes the instance
-  ids of enclosing template groups.
+- Seeds are strings. The format names the hash that turns a seed string into
+  the internal PRNG state, so typed seeds like `amber-cave-17` work everywhere.
+- Seed strings are normalized to Unicode NFC and hashed as UTF-8, so umlauts,
+  accents, and emoji give the same stream on every system and player.
+- Identical seeds are never forbidden. The editor may warn, but it never
+  prevents them (see architecture 4a).
+- **Seed anchors:** `groups` and nodes may carry an explicit `seed`. A node's
+  stream seed = hash(nearest explicit seed on the node or its ancestors, or the
+  scene seed if none; plus the node's path *relative to that anchor*).
+- Consequence: a group with an explicit seed sounds the same wherever it is
+  placed in a scene or in other scenes. A group without one gets a different
+  stream per instance because the instance id is part of the path.
+- Node and group ids must be **stable and internal** (not the user-visible
+  label), because renaming an id would change its stream.
+- `playback.seedMode` decides what the player uses: `fixed` (the scene seed) or
+  `fresh` (a new scene seed per start; explicit seed anchors still apply).
 - Everything random draws from its own stream: event timing, noise samples,
   random start offsets, randomizer nodes, random modulation.
 - Event times are defined in scene time (the audio clock), not wall-clock time.
