@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phonotope Spike 0.0: background playback</title>
+<meta name="description" content="Throwaway test page: does Web Audio keep playing with the screen off on Android?">
+<meta name="theme-color" content="#17323a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<style>
+  :root {
+    --bg: #f4f6f7; --fg: #1b2428; --muted: #5a6a70; --card: #ffffff;
+    --line: #cfd8db; --accent: #1f6f7d; --accent-fg: #ffffff; --warn: #8a4b00; --warn-bg: #fff2dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11181b; --fg: #e4ecee; --muted: #93a5ab; --card: #192226;
+      --line: #2c3a3f; --accent: #4fb3c4; --accent-fg: #06191d; --warn: #ffcf8a; --warn-bg: #3a2a10;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 12px; font: 16px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; margin: 4px 0 2px; }
+  h2 { font-size: 1rem; margin: 0 0 8px; }
+  p { margin: 6px 0; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; }
+  .warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  label { display: block; font-size: 0.85rem; color: var(--muted); }
+  input, select, button, textarea { font: inherit; }
+  input[type="text"], input[type="number"], select { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  input[type="range"] { width: 100%; }
+  .check { display: flex; gap: 8px; align-items: center; color: var(--fg); font-size: 0.95rem; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { padding: 12px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; flex: 1; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  textarea { width: 100%; min-height: 220px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: 12px/1.35 ui-monospace, monospace; }
+  .overflow { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Phonotope Spike 0.0</h1>
+  <p class="muted">Throwaway test: does Web Audio keep generating sound reliably with the screen off? Noise with slow modulation, plus randomly timed drops through a convolution reverb. The event scheduler uses a look-ahead against the audio clock.</p>
+
+  <div class="card warn">
+    <p><strong>Before you start:</strong> set a low volume and keep the phone unplugged for battery measurements. Do <em>not</em> use a wake lock; the screen must be allowed to turn off.</p>
+  </div>
+
+  <section class="card" aria-labelledby="h-settings">
+    <h2 id="h-settings">Settings</h2>
+    <div class="grid">
+      <div><label for="seed">Seed (any text)</label><input type="text" id="seed" value="amber-cave-17" autocomplete="off"></div>
+      <div><label for="volume">Master volume: <span id="volumeOut"></span></label><input type="range" id="volume" min="0.02" max="0.6" step="0.01" value="0.15"></div>
+      <div><label for="lookahead">Look-ahead (s)</label>
+        <select id="lookahead"><option>1</option><option>2</option><option selected>5</option><option>10</option><option>30</option></select></div>
+      <div><label for="tickMs">Scheduler tick (ms)</label>
+        <select id="tickMs"><option>100</option><option selected>250</option><option>1000</option></select></div>
+      <div><label for="minI">Drop interval min (s)</label><input type="number" id="minI" value="1.5" min="0.2" step="0.1"></div>
+      <div><label for="maxI">Drop interval max (s)</label><input type="number" id="maxI" value="6" min="0.3" step="0.1"></div>
+      <div><label for="latency">Latency hint</label>
+        <select id="latency"><option value="playback" selected>playback</option><option value="balanced">balanced</option><option value="interactive">interactive</option></select></div>
+      <div><label for="output">Output path</label>
+        <select id="output"><option value="direct" selected>Direct to destination</option><option value="media">Via &lt;audio&gt; element (MediaStream)</option></select></div>
+      <div><label for="duration">Auto-stop after (minutes, 0 = never)</label><input type="number" id="duration" value="0" min="0" step="1"></div>
+    </div>
+    <div style="margin-top:10px; display:grid; gap:6px;">
+      <label class="check"><input type="checkbox" id="mediaSession" checked> Media Session (notification controls)</label>
+      <label class="check"><input type="checkbox" id="reverb" checked> Convolution reverb</label>
+      <label class="check"><input type="checkbox" id="autoResume"> Try to resume if the audio context gets suspended</label>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button type="button" class="primary" id="startBtn">Start</button>
+      <button type="button" id="stopBtn" disabled>Stop</button>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="h-status">
+    <h2 id="h-status">Status</h2>
+    <div class="overflow"><dl id="status"></dl></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-env">
+    <h2 id="h-env">Environment</h2>
+    <div class="overflow"><dl id="env"></dl></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-prev">
+    <h2 id="h-prev">Previous run</h2>
+    <p id="prevText" class="muted">No previous run stored.</p>
+    <div class="row"><button type="button" id="prevBtn" disabled>Load previous log</button></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-log">
+    <h2 id="h-log">Log</h2>
+    <textarea id="log" readonly spellcheck="false"></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button type="button" id="copyBtn">Copy</button>
+      <button type="button" id="downloadBtn">Download</button>
+      <button type="button" id="clearBtn">Clear</button>
+    </div>
+  </section>
+  <p class="muted">Spike only. The PRNG and seed derivation here are not the final Phonotope choices (see ADR 0009).</p>
+</main>
+
+<audio id="out" playsinline></audio>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const RUN_KEY = 'phonotope-spike-0.0:run';
+  const SET_KEY = 'phonotope-spike-0.0:settings';
+  const SETTING_IDS = ['seed', 'volume', 'lookahead', 'tickMs', 'minI', 'maxI', 'latency', 'output', 'duration'];
+  const CHECK_IDS = ['mediaSession', 'reverb', 'autoResume'];
+
+  // ---- seeded randomness (spike only) ----
+  function xmur3(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return function () {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      return (h ^= h >>> 16) >>> 0;
+    };
+  }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // One independent stream per consumer: hash(seed, path).
+  function stream(seed, path) {
+    return mulberry32(xmur3(seed.normalize('NFC') + '|' + path)());
+  }
+
+  // ---- state ----
+  const S = {
+    running: false, ctx: null, cfg: null, timer: null, uiTimer: null,
+    startWall: 0, startAudio: 0, startedIso: '',
+    lastTickWall: 0, ticks: 0, maxTickGap: 0,
+    lastLag: 0, lag: 0, stalls: 0, maxStall: 0,
+    nextEvent: 0, events: 0, droughts: 0, maxDrought: 0, droughtTotal: 0,
+    stateChanges: 0, hiddenSince: null, hiddenTotal: 0, hiddenCount: 0,
+    lastPersist: 0, rngDrops: null, rngInterval: null, dropBus: null,
+    master: null, nodes: [], battery: null, batStart: null, lastBatLog: 0,
+    log: [], logDirty: false, stopping: false
+  };
+
+  // ---- helpers ----
+  const wallNow = () => Date.now() / 1000;
+  const pad = (n) => String(n).padStart(2, '0');
+  function fmtDur(sec) {
+    sec = Math.max(0, Math.round(sec));
+    return pad(Math.floor(sec / 3600)) + ':' + pad(Math.floor((sec % 3600) / 60)) + ':' + pad(sec % 60);
+  }
+  function clock() {
+    const d = new Date();
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  function log(msg) {
+    const el = S.running ? ' +' + fmtDur(wallNow() - S.startWall) : '';
+    S.log.push('[' + clock() + el + '] ' + msg);
+    if (S.log.length > 600) S.log.splice(0, S.log.length - 600);
+    S.logDirty = true;
+  }
+  function readCfg() {
+    const num = (id) => Number($(id).value);
+    const minI = Math.max(0.2, num('minI'));
+    return {
+      seed: $('seed').value || 'seed',
+      volume: num('volume'),
+      lookahead: num('lookahead'),
+      tickMs: num('tickMs'),
+      minI: minI,
+      maxI: Math.max(minI + 0.1, num('maxI')),
+      latency: $('latency').value,
+      output: $('output').value,
+      durationMin: Math.max(0, num('duration')),
+      mediaSession: $('mediaSession').checked,
+      reverb: $('reverb').checked,
+      autoResume: $('autoResume').checked
+    };
+  }
+  function saveSettings() {
+    try {
+      const o = {};
+      SETTING_IDS.forEach((id) => { o[id] = $(id).value; });
+      CHECK_IDS.forEach((id) => { o[id] = $(id).checked; });
+      localStorage.setItem(SET_KEY, JSON.stringify(o));
+    } catch (e) { /* storage may be unavailable */ }
+  }
+  function loadSettings() {
+    try {
+      const o = JSON.parse(localStorage.getItem(SET_KEY) || 'null');
+      if (!o) return;
+      SETTING_IDS.forEach((id) => { if (o[id] !== undefined) $(id).value = o[id]; });
+      CHECK_IDS.forEach((id) => { if (o[id] !== undefined) $(id).checked = o[id]; });
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---- audio graph ----
+  function makeNoiseBuffer(ctx, rng, seconds) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (rng() * 2 - 1) * 0.5;
+    }
+    return buf;
+  }
+  function makeImpulse(ctx, rng, seconds) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (rng() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    return buf;
+  }
+  function addLfo(ctx, freq, amount, target) {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    g.gain.value = amount;
+    osc.connect(g);
+    g.connect(target);
+    osc.start();
+    S.nodes.push(osc, g);
+  }
+  function buildGraph(cfg) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx({ latencyHint: cfg.latency });
+    S.ctx = ctx;
+
+    const master = ctx.createGain();
+    master.gain.value = cfg.volume;
+    S.master = master;
+
+    if (cfg.output === 'media') {
+      const dest = ctx.createMediaStreamDestination();
+      master.connect(dest);
+      const el = $('out');
+      el.srcObject = dest.stream;
+      el.play().catch((e) => log('audio element play() failed: ' + e.message));
+    } else {
+      master.connect(ctx.destination);
+    }
+
+    // Noise bed: looped white noise, low-passed, slowly modulated.
+    const noise = ctx.createBufferSource();
+    noise.buffer = makeNoiseBuffer(ctx, stream(cfg.seed, 'noise'), 6);
+    noise.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 700;
+    lp.Q.value = 0.7;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.35;
+    noise.connect(lp);
+    lp.connect(ng);
+    ng.connect(master);
+    noise.start();
+    addLfo(ctx, 0.11, 350, lp.frequency);
+    addLfo(ctx, 0.037, 0.12, ng.gain);
+    S.nodes.push(noise, lp, ng);
+
+    // Drops: dry bus plus optional convolution reverb.
+    const bus = ctx.createGain();
+    bus.gain.value = 1;
+    bus.connect(master);
+    if (cfg.reverb) {
+      const conv = ctx.createConvolver();
+      conv.buffer = makeImpulse(ctx, stream(cfg.seed, 'impulse'), 2.5);
+      const wet = ctx.createGain();
+      wet.gain.value = 0.5;
+      bus.connect(conv);
+      conv.connect(wet);
+      wet.connect(master);
+      S.nodes.push(conv, wet);
+    }
+    S.dropBus = bus;
+
+    ctx.onstatechange = () => {
+      S.stateChanges++;
+      log('AudioContext state -> ' + ctx.state);
+      if (S.running && S.cfg.autoResume && (ctx.state === 'suspended' || ctx.state === 'interrupted')) {
+        ctx.resume().then(() => log('resume() succeeded')).catch((e) => log('resume() failed: ' + e.message));
+      }
+    };
+  }
+  function scheduleDrop(t) {
+    const ctx = S.ctx, r = S.rngDrops;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    const f0 = 900 + r() * 1400;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f0 * 0.35, t + 0.12);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.5 + 0.4 * r(), t + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1500 + r() * 6500; // "distance": duller when low
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = r() * 2 - 1;
+    osc.connect(env); env.connect(lp); lp.connect(pan); pan.connect(S.dropBus);
+    osc.start(t);
+    osc.stop(t + 0.3);
+    osc.onended = () => {
+      try { osc.disconnect(); env.disconnect(); lp.disconnect(); pan.disconnect(); } catch (e) { /* ignore */ }
+    };
+  }
+
+  // ---- scheduler tick ----
+  function tick() {
+    if (!S.running) return;
+    const ctx = S.ctx, cfg = S.cfg;
+    const now = wallNow();
+
+    const gap = now - S.lastTickWall;
+    S.lastTickWall = now;
+    S.ticks++;
+    if (gap > S.maxTickGap) S.maxTickGap = gap;
+    if (gap > cfg.tickMs / 1000 * 4 + 1) log('tick gap ' + gap.toFixed(1) + ' s (timers throttled?)');
+
+    // Audio clock versus wall clock: lag grows if the audio clock stalls.
+    const lag = (now - S.startWall) - (ctx.currentTime - S.startAudio);
+    const dLag = lag - S.lastLag;
+    if (dLag > 0.5) {
+      S.stalls++;
+      if (dLag > S.maxStall) S.maxStall = dLag;
+      log('audio clock lagged ' + dLag.toFixed(1) + ' s (state ' + ctx.state + ')');
+    }
+    S.lastLag = lag;
+    S.lag = lag;
+
+    // Event drought: the schedule ran dry before this tick arrived.
+    if (S.nextEvent < ctx.currentTime - 0.05) {
+      const dry = ctx.currentTime - S.nextEvent;
+      S.droughts++;
+      S.droughtTotal += dry;
+      if (dry > S.maxDrought) S.maxDrought = dry;
+      log('event drought: no events scheduled for ' + dry.toFixed(1) + ' s');
+      S.nextEvent = ctx.currentTime + 0.05;
+    }
+    const horizon = ctx.currentTime + cfg.lookahead;
+    while (S.nextEvent < horizon) {
+      scheduleDrop(S.nextEvent);
+      S.events++;
+      S.nextEvent += cfg.minI + S.rngInterval() * (cfg.maxI - cfg.minI);
+    }
+
+    pollBattery(now, false);
+    if (now - S.lastPersist >= 5) persist(true);
+    if (cfg.durationMin > 0 && now - S.startWall >= cfg.durationMin * 60) stop('auto-stop reached');
+  }
+
+  // ---- battery ----
+  function pollBattery(now, force) {
+    if (!S.battery) return;
+    if (!force && now - S.lastBatLog < 60) return;
+    S.lastBatLog = now;
+    log('battery ' + Math.round(S.battery.level * 100) + '% charging=' + S.battery.charging);
+  }
+
+  // ---- persistence ----
+  function summaryObject(running) {
+    return {
+      running: running,
+      started: S.startedIso,
+      lastHeartbeat: new Date().toISOString(),
+      elapsedSec: Math.round(wallNow() - S.startWall),
+      audioLagSec: Number(S.lag.toFixed(1)),
+      ticks: S.ticks, maxTickGapSec: Number(S.maxTickGap.toFixed(1)),
+      events: S.events, droughts: S.droughts, maxDroughtSec: Number(S.maxDrought.toFixed(1)),
+      stalls: S.stalls, maxStallSec: Number(S.maxStall.toFixed(1)),
+      stateChanges: S.stateChanges, hiddenTotalSec: Math.round(S.hiddenTotal),
+      batteryStart: S.batStart, batteryNow: S.battery ? Math.round(S.battery.level * 100) : null,
+      cfg: S.cfg, log: S.log.slice(-400)
+    };
+  }
+  function persist(running) {
+    S.lastPersist = wallNow();
+    try { localStorage.setItem(RUN_KEY, JSON.stringify(summaryObject(running))); } catch (e) { /* ignore */ }
+  }
+  function describePrevious() {
+    let prev = null;
+    try { prev = JSON.parse(localStorage.getItem(RUN_KEY) || 'null'); } catch (e) { /* ignore */ }
+    if (!prev) return;
+    const clean = prev.running ? 'did NOT shut down cleanly (page killed, crashed, or still open elsewhere)' : 'stopped cleanly';
+    $('prevText').textContent = 'Started ' + prev.started + ', last heartbeat ' + prev.lastHeartbeat +
+      ' (' + fmtDur(prev.elapsedSec) + '). ' + clean + '. Events ' + prev.events + ', droughts ' + prev.droughts +
+      ' (max ' + prev.maxDroughtSec + ' s), audio lag ' + prev.audioLagSec + ' s, max tick gap ' + prev.maxTickGapSec +
+      ' s, battery ' + (prev.batteryStart === null ? 'n/a' : prev.batteryStart + '% -> ' + prev.batteryNow + '%') + '.';
+    $('prevBtn').disabled = false;
+    $('prevBtn').onclick = () => {
+      S.log = (prev.log || []).slice();
+      S.log.push('--- previous run loaded above ---');
+      S.logDirty = true;
+      renderLog();
+    };
+  }
+
+  // ---- start / stop ----
+  async function start() {
+    if (S.running || S.stopping) return;
+    saveSettings();
+    const cfg = readCfg();
+    S.cfg = cfg;
+    S.nodes = [];
+    S.events = 0; S.ticks = 0; S.maxTickGap = 0; S.lastLag = 0; S.lag = 0; S.stalls = 0; S.maxStall = 0;
+    S.droughts = 0; S.maxDrought = 0; S.droughtTotal = 0; S.stateChanges = 0;
+    S.hiddenTotal = 0; S.hiddenCount = 0; S.hiddenSince = document.hidden ? wallNow() : null;
+    S.rngDrops = stream(cfg.seed, 'drops');
+    S.rngInterval = stream(cfg.seed, 'intervals');
+
+    try {
+      buildGraph(cfg);
+      if (S.ctx.state !== 'running') await S.ctx.resume();
+    } catch (e) {
+      log('start failed: ' + e.message);
+      renderLog();
+      return;
+    }
+    S.running = true;
+    S.startWall = wallNow();
+    S.startAudio = S.ctx.currentTime;
+    S.startedIso = new Date().toISOString();
+    S.lastTickWall = S.startWall;
+    S.nextEvent = S.ctx.currentTime + 0.5;
+
+    log('START seed="' + cfg.seed + '" lookahead=' + cfg.lookahead + ' s tick=' + cfg.tickMs + ' ms interval=' +
+        cfg.minI + '-' + cfg.maxI + ' s latency=' + cfg.latency + ' output=' + cfg.output +
+        ' reverb=' + cfg.reverb + ' mediaSession=' + cfg.mediaSession);
+    log('sampleRate=' + S.ctx.sampleRate + ' baseLatency=' + (S.ctx.baseLatency || 0).toFixed(3) +
+        ' outputLatency=' + ((S.ctx.outputLatency || 0)).toFixed(3));
+    if (S.battery) { S.batStart = Math.round(S.battery.level * 100); pollBattery(S.startWall, true); }
+
+    if (cfg.mediaSession && 'mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: 'Phonotope spike 0.0', artist: 'test signal' });
+        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.setActionHandler('pause', () => stop('media session pause'));
+        navigator.mediaSession.setActionHandler('stop', () => stop('media session stop'));
+      } catch (e) { log('media session setup failed: ' + e.message); }
+    }
+
+    S.timer = setInterval(tick, cfg.tickMs);
+    S.uiTimer = setInterval(render, 1000);
+    tick();
+    persist(true);
+    $('startBtn').disabled = true;
+    $('stopBtn').disabled = false;
+    render();
+  }
+
+  function stop(reason) {
+    if (!S.running || S.stopping) return;
+    S.stopping = true;
+    log('STOP (' + reason + ')');
+    clearInterval(S.timer);
+    clearInterval(S.uiTimer);
+    if (S.battery) pollBattery(wallNow(), true);
+    const ctx = S.ctx;
+    try {
+      S.master.gain.cancelScheduledValues(ctx.currentTime);
+      S.master.gain.setValueAtTime(S.master.gain.value, ctx.currentTime);
+      S.master.gain.linearRampToValueAtTime(0, ctx.currentTime + 2);
+    } catch (e) { /* ignore */ }
+    persist(false);
+    setTimeout(() => {
+      try { ctx.onstatechange = null; ctx.close(); } catch (e) { /* ignore */ }
+      const el = $('out');
+      el.pause();
+      el.srcObject = null;
+      if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'none'; } catch (e) { /* ignore */ } }
+      S.running = false;
+      S.stopping = false;
+      S.ctx = null;
+      $('startBtn').disabled = false;
+      $('stopBtn').disabled = true;
+      persist(false);
+      render();
+    }, 2200);
+  }
+
+  // ---- rendering ----
+  function setDl(dl, rows) {
+    dl.textContent = '';
+    rows.forEach(([k, v]) => {
+      const dt = document.createElement('dt');
+      const dd = document.createElement('dd');
+      dt.textContent = k;
+      dd.textContent = v;
+      dl.append(dt, dd);
+    });
+  }
+  function render() {
+    const now = wallNow();
+    const elapsed = S.running ? now - S.startWall : 0;
+    const hiddenNow = S.hiddenSince !== null ? now - S.hiddenSince : 0;
+    setDl($('status'), [
+      ['State', S.running ? (S.stopping ? 'stopping' : 'running') : 'stopped'],
+      ['AudioContext', S.ctx ? S.ctx.state : '-'],
+      ['Elapsed', fmtDur(elapsed)],
+      ['Audio lag vs wall clock', S.lag.toFixed(1) + ' s (should stay near 0)'],
+      ['Audio clock stalls', S.stalls + ' (max ' + S.maxStall.toFixed(1) + ' s)'],
+      ['Event droughts', S.droughts + ' (max ' + S.maxDrought.toFixed(1) + ' s, total ' + S.droughtTotal.toFixed(1) + ' s)'],
+      ['Events scheduled', String(S.events)],
+      ['Scheduler ticks', S.ticks + ' (max gap ' + S.maxTickGap.toFixed(1) + ' s)'],
+      ['Time hidden', fmtDur(S.hiddenTotal + hiddenNow) + ' (' + S.hiddenCount + ' times)'],
+      ['AudioContext state changes', String(S.stateChanges)],
+      ['Battery', S.battery ? Math.round(S.battery.level * 100) + '% ' + (S.battery.charging ? '(charging)' : '(not charging)') +
+        (S.batStart !== null ? ', start ' + S.batStart + '%' : '') : 'API not available']
+    ]);
+    renderLog();
+  }
+  function renderLog() {
+    if (!S.logDirty) return;
+    const ta = $('log');
+    const atBottom = ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 20;
+    ta.value = S.log.join('\n');
+    if (atBottom) ta.scrollTop = ta.scrollHeight;
+    S.logDirty = false;
+  }
+  function renderEnv() {
+    const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    setDl($('env'), [
+      ['Display mode', standalone ? 'standalone (installed PWA)' : 'browser tab'],
+      ['Secure context', String(window.isSecureContext)],
+      ['User agent', navigator.userAgent],
+      ['Logical cores', String(navigator.hardwareConcurrency || 'n/a')],
+      ['Media Session API', 'mediaSession' in navigator ? 'yes' : 'no'],
+      ['Battery API', 'getBattery' in navigator ? 'yes' : 'no'],
+      ['Service worker', 'serviceWorker' in navigator ? 'supported' : 'no']
+    ]);
+  }
+
+  // ---- log buttons ----
+  $('copyBtn').onclick = async () => {
+    const text = S.log.join('\n');
+    try { await navigator.clipboard.writeText(text); log('log copied to clipboard'); }
+    catch (e) { $('log').select(); log('copy failed, text selected instead'); }
+    renderLog();
+  };
+  $('downloadBtn').onclick = () => {
+    const blob = new Blob([S.log.join('\n') + '\n'], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'phonotope-spike-0.0-log.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $('clearBtn').onclick = () => { S.log = []; S.logDirty = true; renderLog(); };
+
+  // ---- wiring ----
+  $('startBtn').onclick = start;
+  $('stopBtn').onclick = () => stop('user');
+  $('volume').addEventListener('input', () => {
+    $('volumeOut').textContent = $('volume').value;
+    if (S.running && S.master && S.ctx) S.master.gain.setTargetAtTime(Number($('volume').value), S.ctx.currentTime, 0.05);
+  });
+  document.addEventListener('visibilitychange', () => {
+    const now = wallNow();
+    if (document.hidden) {
+      S.hiddenSince = now;
+      S.hiddenCount++;
+      log('page hidden');
+    } else {
+      if (S.hiddenSince !== null) S.hiddenTotal += now - S.hiddenSince;
+      S.hiddenSince = null;
+      log('page visible again');
+      if (S.running) tick();
+    }
+    S.logDirty = true;
+    renderLog();
+  });
+  window.addEventListener('pagehide', () => { if (S.running) persist(true); });
+
+  loadSettings();
+  $('volumeOut').textContent = $('volume').value;
+  renderEnv();
+  describePrevious();
+  render();
+
+  if (navigator.getBattery) {
+    navigator.getBattery().then((b) => { S.battery = b; render(); }).catch(() => { /* ignore */ });
+  }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch((e) => log('service worker registration failed: ' + e.message));
+  }
+})();
+</script>
+</body>
+</html>
