@@ -18,6 +18,9 @@ Web Audio can be the engine for both editor and player (ADR 0002).
 5. What is the battery use per hour?
 6. What happens on an incoming call, another app starting audio, headphone
    removal, or Bluetooth disconnect?
+7. Do Chrome (Blink) and Firefox (Gecko) behave differently? Firefox is the
+   maintainer's daily-driver browser; an Android WebView wrapper would use
+   the Chromium engine regardless of the default browser.
 
 ## Test device
 
@@ -44,6 +47,12 @@ state changes, visibility, and battery level.
 | 5 | best of 1-4 | | | relaxed | 60 min |
 | 6 | best overall, look-ahead tuned | | | best | 8 h overnight |
 | 7 | WebView wrapper + foreground service | | | | only if 1-5 fail |
+| 8 | Firefox tab | direct | off | default | 60 min |
+| 9 | Firefox tab | via audio element | on | default | 60 min |
+| 10 | Firefox installed PWA (if offered) | best of 8-9 | | default | 60 min |
+
+Rows 1-7 use Chrome. Firefox has no Battery API, so for rows 8-10 the battery
+level is read manually at start and end.
 
 Screen off in all runs, charger unplugged, same volume. Vendor battery
 management may differ from stock Android, so each result records the setting used.
@@ -57,6 +66,40 @@ Interruption tests (question 6) are done once on the best variant.
 - Audible dropouts by listening, compared with the log
 - Behavior on interruptions
 - Chrome version and Android build
+
+## Findings so far (informal, Firefox on the test device)
+
+- Run 1 (background, screen off, direct output, Media Session on): the page ran
+  for 4:41 minutes and then stopped without any log entry; it did not restart.
+  Up to then: no event droughts, maximum timer gap 0.3 s (no timer
+  throttling), the audio context stayed `running`, a short phone call did
+  not interrupt it.
+- In both foreground and background the audio clock fell behind the wall clock
+  at about 0.7 to 0.85 % (about 0.1 s per 10 to 15 s). Crackling and short
+  gaps are audible on the phone. On the desktop the lag stays at 0.
+- Without the convolution reverb the rate was practically unchanged
+  (0.4 s per 60 s), so the reverb is not the main cause.
+- Open: cause of the lag (clock/buffer handling versus load), cause of the
+  stop after 4:41 minutes (process freeze or kill suspected; see
+  `dumpsys activity exit-info` for the Firefox package), behavior in Chrome.
+
+## Benchmark
+
+[`spike-0.0/benchmark.html`](../spike-0.0/benchmark.html) runs a load ladder
+(tone, noise, modulation, drops, reverb, N voices) plus probes for latency hint
+and sample rate, and reports the lag rate per stage. Run it in the foreground in
+each browser under test and paste the Markdown table below.
+
+| Stage | Firefox | Chrome |
+|---|---|---|
+| L0 sine tone only | | |
+| L1 noise | | |
+| L2 modulation | | |
+| L3 + drops | | |
+| L4 + reverb | | |
+| L5 + 16 voices | | |
+| L6 + 48 voices | | |
+| P1 to P4 probes | | |
 
 ## Decision rules
 
@@ -77,3 +120,6 @@ Interruption tests (question 6) are done once on the best variant.
 | 4 | | | | | | |
 | 5 | | | | | | |
 | 6 | | | | | | |
+| 8 | | | | | | |
+| 9 | | | | | | |
+| 10 | | | | | | |

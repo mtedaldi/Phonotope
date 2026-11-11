@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phonotope Spike 0.0: benchmark mode</title>
+<meta name="description" content="Automated load ladder: how much audio work can this device sustain without falling behind real time?">
+<meta name="theme-color" content="#17323a">
+<link rel="icon" href="icon-192.png" type="image/png">
+<style>
+  :root {
+    --bg: #f4f6f7; --fg: #1b2428; --muted: #5a6a70; --card: #ffffff;
+    --line: #cfd8db; --accent: #1f6f7d; --accent-fg: #ffffff; --warn: #8a4b00; --warn-bg: #fff2dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11181b; --fg: #e4ecee; --muted: #93a5ab; --card: #192226;
+      --line: #2c3a3f; --accent: #4fb3c4; --accent-fg: #06191d; --warn: #ffcf8a; --warn-bg: #3a2a10;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 12px; font: 16px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; margin: 4px 0 2px; }
+  h2 { font-size: 1rem; margin: 0 0 8px; }
+  p { margin: 6px 0; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; }
+  .warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  label { display: block; font-size: 0.85rem; color: var(--muted); }
+  input, select, button, textarea { font: inherit; }
+  input[type="number"], select { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  input[type="range"] { width: 100%; }
+  .check { display: flex; gap: 8px; align-items: center; color: var(--fg); font-size: 0.95rem; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { padding: 12px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; flex: 1; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  [hidden] { display: none !important; }
+  .overflow { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  th, td { border-bottom: 1px solid var(--line); padding: 5px 8px; text-align: right; white-space: nowrap; }
+  th:nth-child(1), td:nth-child(1), th:nth-child(2), td:nth-child(2) { text-align: left; }
+  textarea { width: 100%; min-height: 150px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: 12px/1.35 ui-monospace, monospace; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Phonotope Spike 0.0: benchmark mode</h1>
+  <p class="muted">Runs a ladder of audio loads, one after another, and measures how fast the audio clock falls behind the wall clock in each stage. <a href="index.html">Back to the background test</a>.</p>
+
+  <div class="card warn">
+    <p><strong>Keep the page in the foreground with the screen on</strong> (a screen wake lock is requested where available). Use a low volume. You will hear a tone, noise, drops, and murmuring voices; listen for crackles and gaps and note in which stage they start.</p>
+  </div>
+
+  <section class="card" aria-labelledby="h-set">
+    <h2 id="h-set">Settings</h2>
+    <div class="grid">
+      <div><label for="stageSec">Seconds per stage</label>
+        <select id="stageSec"><option value="3">3 (quick dry run)</option><option value="30">30</option><option value="45" selected>45</option><option value="60">60</option><option value="90">90</option></select></div>
+      <div><label for="volume">Master volume: <span id="volumeOut"></span></label><input type="range" id="volume" min="0.02" max="0.6" step="0.01" value="0.12"></div>
+      <div><label for="latency">Latency hint (ladder stages)</label>
+        <select id="latency"><option value="playback" selected>playback</option><option value="balanced">balanced</option><option value="interactive">interactive</option></select></div>
+      <div><label for="voicesA">Voices, stage L5</label><input type="number" id="voicesA" value="16" min="1" max="200"></div>
+      <div><label for="voicesB">Voices, stage L6</label><input type="number" id="voicesB" value="48" min="1" max="400"></div>
+    </div>
+    <div style="margin-top:10px; display:grid; gap:6px;">
+      <label class="check"><input type="checkbox" id="probes" checked> Also run probe stages (latency hints, sample rate)</label>
+      <label class="check"><input type="checkbox" id="wake" checked> Request screen wake lock</label>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button type="button" class="primary" id="startBtn">Start benchmark</button>
+      <button type="button" id="abortBtn" disabled>Abort</button>
+    </div>
+    <div class="row" style="margin-top:8px;"><button type="button" class="primary" id="continueBtn" hidden>Continue (allow audio)</button></div>
+    <p id="status" class="muted" style="margin-top:8px;">Idle.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-res">
+    <h2 id="h-res">Results</h2>
+    <p class="muted">Lag rate: how much slower than real time the audio clock runs (0 % is perfect). Big steps: seconds in which the audio clock lost more than 30 ms. Output timestamp rate is a second, independent estimate if the browser supports it.</p>
+    <div class="overflow"><table id="resTable"><thead></thead><tbody></tbody></table></div>
+    <div class="row" style="margin-top:8px;">
+      <button type="button" id="copyBtn">Copy (Markdown)</button>
+      <button type="button" id="downloadBtn">Download</button>
+      <button type="button" id="clearBtn">Clear</button>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="h-env">
+    <h2 id="h-env">Environment</h2>
+    <div class="overflow"><dl id="env"></dl></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-log">
+    <h2 id="h-log">Log</h2>
+    <textarea id="log" readonly spellcheck="false"></textarea>
+  </section>
+  <p class="muted">Spike only. The voices are crude load generators, not a design for the vocal texture generator.</p>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const STORE_KEY = 'phonotope-spike-0.0:benchmark';
+  const pad = (n) => String(n).padStart(2, '0');
+
+  // ---- seeded randomness (spike only) ----
+  function xmur3(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return function () {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      return (h ^= h >>> 16) >>> 0;
+    };
+  }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const stream = (seed, path) => mulberry32(xmur3(seed.normalize('NFC') + '|' + path)());
+
+  // ---- state and helpers ----
+  const S = { running: false, abort: false, results: [], wake: null, cfg: null, log: [] };
+
+  function log(msg) {
+    const d = new Date();
+    S.log.push('[' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '] ' + msg);
+    if (S.log.length > 400) S.log.splice(0, S.log.length - 400);
+    const ta = $('log');
+    ta.value = S.log.join('\n');
+    ta.scrollTop = ta.scrollHeight;
+  }
+  const setStatus = (t) => { $('status').textContent = t; };
+
+  function readCfg() {
+    const n = (id) => Number($(id).value);
+    return {
+      stageSec: n('stageSec'),
+      volume: n('volume'),
+      latency: $('latency').value,
+      voicesA: Math.max(1, Math.round(n('voicesA'))),
+      voicesB: Math.max(1, Math.round(n('voicesB'))),
+      probes: $('probes').checked,
+      wake: $('wake').checked
+    };
+  }
+
+  function buildStages(cfg) {
+    const st = [
+      { id: 'L0', name: 'Sine tone only', level: 0 },
+      { id: 'L1', name: 'White noise', level: 1 },
+      { id: 'L2', name: 'Noise + low-pass + 2 LFOs', level: 2 },
+      { id: 'L3', name: 'L2 + random drops (dry)', level: 3 },
+      { id: 'L4', name: 'L3 + convolution reverb (2.5 s)', level: 4 },
+      { id: 'L5', name: 'L4 + ' + cfg.voicesA + ' voices', level: 5, voices: cfg.voicesA },
+      { id: 'L6', name: 'L4 + ' + cfg.voicesB + ' voices', level: 6, voices: cfg.voicesB }
+    ];
+    if (cfg.probes) {
+      st.push(
+        { id: 'P1', name: 'Noise, latencyHint interactive', level: 1, ctxOpts: { latencyHint: 'interactive' } },
+        { id: 'P2', name: 'Noise, latencyHint balanced', level: 1, ctxOpts: { latencyHint: 'balanced' } },
+        { id: 'P3', name: 'Noise, sampleRate 44100', level: 1, ctxOpts: { sampleRate: 44100 } },
+        { id: 'P4', name: 'Noise, sampleRate 48000', level: 1, ctxOpts: { sampleRate: 48000 } }
+      );
+    }
+    return st;
+  }
+
+  // ---- audio building blocks ----
+  function noiseBuffer(ctx, rng, seconds) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (rng() * 2 - 1) * 0.5;
+    }
+    return buf;
+  }
+  function impulse(ctx, rng, seconds) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (rng() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    return buf;
+  }
+  function addLfo(ctx, freq, amount, target) {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.frequency.value = freq;
+    g.gain.value = amount;
+    osc.connect(g);
+    g.connect(target);
+    osc.start();
+  }
+  function drop(ctx, bus, t, r) {
+    const osc = ctx.createOscillator();
+    const f0 = 900 + r() * 1400;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f0 * 0.35, t + 0.12);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.5 + 0.4 * r(), t + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1500 + r() * 6500;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = r() * 2 - 1;
+    osc.connect(env); env.connect(lp); lp.connect(pan); pan.connect(bus);
+    osc.start(t);
+    osc.stop(t + 0.3);
+    osc.onended = () => {
+      try { osc.disconnect(); env.disconnect(); lp.disconnect(); pan.disconnect(); } catch (e) { /* ignore */ }
+    };
+  }
+  // Crude load generator, NOT a vocal texture design: sawtooth, three formant
+  // band-passes, syllable-rate amplitude modulation, slow pitch wobble.
+  function addVoices(ctx, out, n, r) {
+    const bus = ctx.createGain();
+    bus.gain.value = 0.9 / Math.sqrt(n);
+    bus.connect(out);
+    for (let i = 0; i < n; i++) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = 85 + r() * 180;
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 0.2 + r() * 0.6;
+      const vibG = ctx.createGain();
+      vibG.gain.value = 40 + r() * 60;
+      vib.connect(vibG); vibG.connect(osc.detune);
+      const sum = ctx.createGain();
+      sum.gain.value = 0.5;
+      [[300 + r() * 500, 6], [900 + r() * 1400, 8], [2500 + r() * 700, 10]].forEach((f) => {
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = f[0];
+        bp.Q.value = f[1];
+        osc.connect(bp);
+        bp.connect(sum);
+      });
+      const amp = ctx.createGain();
+      amp.gain.value = 0.5;
+      const syl = ctx.createOscillator();
+      syl.frequency.value = 3 + r() * 3;
+      const sylG = ctx.createGain();
+      sylG.gain.value = 0.45;
+      syl.connect(sylG); sylG.connect(amp.gain);
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = r() * 2 - 1;
+      sum.connect(amp); amp.connect(pan); pan.connect(bus);
+      osc.start(); vib.start(); syl.start();
+    }
+  }
+  function buildLevel(ctx, stage, cfg) {
+    const level = stage.level;
+    const seed = 'benchmark';
+    let timer = null;
+    const master = ctx.createGain();
+    master.gain.value = cfg.volume;
+    master.connect(ctx.destination);
+
+    if (level === 0) {
+      const o = ctx.createOscillator();
+      o.frequency.value = 220;
+      const g = ctx.createGain();
+      g.gain.value = 0.25;
+      o.connect(g); g.connect(master);
+      o.start();
+    }
+    if (level >= 1) {
+      const noise = ctx.createBufferSource();
+      noise.buffer = noiseBuffer(ctx, stream(seed, 'noise'), 6);
+      noise.loop = true;
+      const ng = ctx.createGain();
+      ng.gain.value = 0.35;
+      if (level >= 2) {
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 700;
+        lp.Q.value = 0.7;
+        noise.connect(lp); lp.connect(ng);
+        addLfo(ctx, 0.11, 350, lp.frequency);
+        addLfo(ctx, 0.037, 0.12, ng.gain);
+      } else {
+        noise.connect(ng);
+      }
+      ng.connect(master);
+      noise.start();
+    }
+    if (level >= 3) {
+      const bus = ctx.createGain();
+      bus.connect(master);
+      if (level >= 4) {
+        const conv = ctx.createConvolver();
+        conv.buffer = impulse(ctx, stream(seed, 'impulse'), 2.5);
+        const wet = ctx.createGain();
+        wet.gain.value = 0.5;
+        bus.connect(conv); conv.connect(wet); wet.connect(master);
+      }
+      const rd = stream(seed, 'drops');
+      const ri = stream(seed, 'intervals');
+      let next = ctx.currentTime + 0.5;
+      timer = setInterval(() => {
+        if (next < ctx.currentTime - 0.05) next = ctx.currentTime + 0.05;
+        const horizon = ctx.currentTime + 3;
+        while (next < horizon) { drop(ctx, bus, next, rd); next += 1.5 + ri() * 4.5; }
+      }, 250);
+    }
+    if (level >= 5) addVoices(ctx, master, stage.voices, stream(seed, 'voices'));
+
+    return {
+      stop() {
+        if (timer) clearInterval(timer);
+        try { master.gain.setTargetAtTime(0, ctx.currentTime, 0.03); } catch (e) { /* ignore */ }
+      }
+    };
+  }
+
+  // ---- measuring ----
+  function outputStamp(ctx) {
+    try {
+      const ts = ctx.getOutputTimestamp();
+      if (ts && ts.performanceTime > 0 && ts.contextTime >= 0) return { c: ts.contextTime, p: ts.performanceTime };
+    } catch (e) { /* not supported */ }
+    return null;
+  }
+  function stats(arr) {
+    if (!arr.length) return { mean: 0, std: 0, max: 0 };
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    const v = arr.reduce((a, b) => a + (b - mean) * (b - mean), 0) / arr.length;
+    return { mean: mean, std: Math.sqrt(v), max: Math.max.apply(null, arr) };
+  }
+  async function ensureRunning(ctx) {
+    try { await Promise.race([ctx.resume(), sleep(1500)]); } catch (e) { /* ignore */ }
+    if (ctx.state === 'running') return true;
+    setStatus('The browser wants a tap before audio may start. Press Continue.');
+    $('continueBtn').hidden = false;
+    await new Promise((res) => { $('continueBtn').onclick = res; });
+    $('continueBtn').hidden = true;
+    try { await ctx.resume(); } catch (e) { /* ignore */ }
+    return ctx.state === 'running';
+  }
+
+  async function runStage(stage, cfg, index, total) {
+    const result = { id: stage.id, name: stage.name, sampleRate: null, baseMs: null, outMs: null,
+      ratePct: null, meanMs: null, stdMs: null, maxMs: null, bigSteps: null, otsPct: null,
+      hiddenSec: 0, note: '' };
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const opts = Object.assign({ latencyHint: cfg.latency }, stage.ctxOpts || {});
+    let ctx;
+    try {
+      ctx = new Ctx(opts);
+    } catch (e) {
+      result.note = 'context creation failed: ' + e.message;
+      log(stage.id + ' ' + result.note);
+      return result;
+    }
+    result.sampleRate = ctx.sampleRate;
+    if (stage.ctxOpts && stage.ctxOpts.sampleRate && ctx.sampleRate !== stage.ctxOpts.sampleRate) {
+      result.note = 'requested rate not honored';
+    }
+    const built = buildLevel(ctx, stage, cfg);
+    const running = await ensureRunning(ctx);
+    if (!running) {
+      result.note = 'audio could not start';
+      log(stage.id + ' ' + result.note);
+      try { built.stop(); ctx.close(); } catch (e) { /* ignore */ }
+      return result;
+    }
+    result.baseMs = Math.round((ctx.baseLatency || 0) * 1000);
+    result.outMs = Math.round((ctx.outputLatency || 0) * 1000);
+    setStatus('Stage ' + (index + 1) + '/' + total + ': ' + stage.name);
+    log('start ' + stage.id + ' (' + stage.name + ') rate=' + ctx.sampleRate + ' base=' + result.baseMs + ' ms out=' + result.outMs + ' ms');
+
+    const w0 = Date.now() / 1000;
+    const a0 = ctx.currentTime;
+    const warm = Math.min(5, cfg.stageSec * 0.25);
+    const samples = [];
+    while (!S.abort) {
+      await sleep(1000);
+      const t = Date.now() / 1000 - w0;
+      samples.push({ t: t, lag: t - (ctx.currentTime - a0), ots: outputStamp(ctx), state: ctx.state });
+      if (document.hidden) result.hiddenSec++;
+      setStatus('Stage ' + (index + 1) + '/' + total + ': ' + stage.name + ' (' + Math.round(t) + ' of ' + cfg.stageSec + ' s)');
+      if (t >= cfg.stageSec) break;
+    }
+    built.stop();
+    await sleep(120);
+    try { await ctx.close(); } catch (e) { /* ignore */ }
+
+    const win = samples.filter((s) => s.t >= warm);
+    if (win.length >= 2) {
+      const first = win[0], last = win[win.length - 1];
+      result.ratePct = (last.lag - first.lag) / (last.t - first.t) * 100;
+      const deltas = [];
+      for (let i = 1; i < win.length; i++) deltas.push((win[i].lag - win[i - 1].lag) / (win[i].t - win[i - 1].t) * 1000);
+      const st = stats(deltas);
+      result.meanMs = st.mean; result.stdMs = st.std; result.maxMs = st.max;
+      result.bigSteps = deltas.filter((d) => d > 30).length;
+      const o = win.filter((s) => s.ots);
+      if (o.length >= 2) {
+        const dc = (o[o.length - 1].ots.c - o[0].ots.c) * 1000;
+        const dp = o[o.length - 1].ots.p - o[0].ots.p;
+        if (dp > 0) result.otsPct = (dp - dc) / dp * 100;
+      }
+    } else {
+      result.note = (result.note ? result.note + '; ' : '') + 'too few samples';
+    }
+    const last = samples[samples.length - 1];
+    if (last && last.state !== 'running') result.note = (result.note ? result.note + '; ' : '') + 'context ' + last.state;
+    if (result.hiddenSec > 0) result.note = (result.note ? result.note + '; ' : '') + 'page hidden ' + result.hiddenSec + ' s (unreliable)';
+    log('done ' + stage.id + ': lag rate ' + (result.ratePct === null ? 'n/a' : result.ratePct.toFixed(2) + ' %') +
+        ', big steps ' + result.bigSteps);
+    return result;
+  }
+
+  // ---- wake lock ----
+  async function acquireWake() {
+    try {
+      if (navigator.wakeLock) {
+        S.wake = await navigator.wakeLock.request('screen');
+        log('screen wake lock acquired');
+      } else {
+        log('screen wake lock not supported; keep the screen on manually');
+      }
+    } catch (e) { log('wake lock failed: ' + e.message); }
+  }
+  async function releaseWake() {
+    try { if (S.wake) await S.wake.release(); } catch (e) { /* ignore */ }
+    S.wake = null;
+  }
+
+  // ---- run ----
+  async function runAll() {
+    if (S.running) return;
+    S.running = true;
+    S.abort = false;
+    S.results = [];
+    renderTable();
+    $('startBtn').disabled = true;
+    $('abortBtn').disabled = false;
+    const cfg = readCfg();
+    S.cfg = cfg;
+    const stages = buildStages(cfg);
+    log('benchmark start: ' + stages.length + ' stages, ' + cfg.stageSec + ' s each, latency=' + cfg.latency + ', volume=' + cfg.volume);
+    if (cfg.wake) await acquireWake();
+    for (let i = 0; i < stages.length && !S.abort; i++) {
+      const r = await runStage(stages[i], cfg, i, stages.length);
+      S.results.push(r);
+      renderTable();
+      persist();
+    }
+    await releaseWake();
+    S.running = false;
+    $('startBtn').disabled = false;
+    $('abortBtn').disabled = true;
+    $('continueBtn').hidden = true;
+    setStatus(S.abort ? 'Aborted.' : 'Done. Copy the results as Markdown.');
+    log(S.abort ? 'benchmark aborted' : 'benchmark finished');
+  }
+
+  // ---- results output ----
+  const COLS = [
+    ['Stage', (r) => r.id], ['Description', (r) => r.name],
+    ['Lag rate %', (r) => fmt(r.ratePct, 2)], ['Mean ms/s', (r) => fmt(r.meanMs, 1)],
+    ['Std ms/s', (r) => fmt(r.stdMs, 1)], ['Max ms/s', (r) => fmt(r.maxMs, 0)],
+    ['Big steps', (r) => (r.bigSteps === null ? 'n/a' : String(r.bigSteps))],
+    ['OTS rate %', (r) => fmt(r.otsPct, 2)], ['Rate Hz', (r) => (r.sampleRate === null ? 'n/a' : String(r.sampleRate))],
+    ['Base/out ms', (r) => (r.baseMs === null ? 'n/a' : r.baseMs + '/' + r.outMs)], ['Note', (r) => r.note]
+  ];
+  function fmt(v, d) { return v === null || v === undefined || Number.isNaN(v) ? 'n/a' : v.toFixed(d); }
+  function renderTable() {
+    const thead = $('resTable').tHead;
+    const tbody = $('resTable').tBodies[0];
+    thead.textContent = '';
+    tbody.textContent = '';
+    const hr = thead.insertRow();
+    COLS.forEach((c) => { const th = document.createElement('th'); th.textContent = c[0]; hr.appendChild(th); });
+    S.results.forEach((r) => {
+      const tr = tbody.insertRow();
+      COLS.forEach((c) => { const td = tr.insertCell(); td.textContent = c[1](r); });
+    });
+  }
+  function envLines() {
+    const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    return [
+      ['Date', new Date().toISOString()],
+      ['User agent', navigator.userAgent],
+      ['Display mode', standalone ? 'standalone' : 'browser tab'],
+      ['Logical cores', String(navigator.hardwareConcurrency || 'n/a')],
+      ['Wake Lock API', navigator.wakeLock ? 'yes' : 'no'],
+      ['getOutputTimestamp', (window.AudioContext && 'getOutputTimestamp' in window.AudioContext.prototype) ? 'yes' : 'no']
+    ];
+  }
+  function toMarkdown() {
+    const lines = ['# Phonotope spike 0.0 benchmark', ''];
+    envLines().forEach((e) => lines.push('- ' + e[0] + ': ' + e[1]));
+    if (S.cfg) lines.push('- Settings: ' + S.cfg.stageSec + ' s per stage, latency ' + S.cfg.latency + ', volume ' + S.cfg.volume);
+    lines.push('', '| ' + COLS.map((c) => c[0]).join(' | ') + ' |', '|' + COLS.map(() => '---').join('|') + '|');
+    S.results.forEach((r) => lines.push('| ' + COLS.map((c) => c[1](r)).join(' | ') + ' |'));
+    return lines.join('\n') + '\n';
+  }
+  function persist() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ results: S.results, cfg: S.cfg })); } catch (e) { /* ignore */ }
+  }
+  function restore() {
+    try {
+      const o = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (o && o.results && o.results.length) {
+        S.results = o.results;
+        S.cfg = o.cfg;
+        log('results of the previous session restored');
+      }
+    } catch (e) { /* ignore */ }
+  }
+  function renderEnv() {
+    const dl = $('env');
+    dl.textContent = '';
+    envLines().forEach((e) => {
+      const dt = document.createElement('dt');
+      const dd = document.createElement('dd');
+      dt.textContent = e[0];
+      dd.textContent = e[1];
+      dl.append(dt, dd);
+    });
+  }
+
+  // ---- wiring ----
+  $('startBtn').onclick = runAll;
+  $('abortBtn').onclick = () => { S.abort = true; setStatus('Aborting after the current second...'); };
+  $('volume').addEventListener('input', () => { $('volumeOut').textContent = $('volume').value; });
+  $('copyBtn').onclick = async () => {
+    const text = toMarkdown();
+    try { await navigator.clipboard.writeText(text); log('results copied to clipboard'); }
+    catch (e) { $('log').value = text; $('log').select(); log('copy failed; text placed in the log box'); }
+  };
+  $('downloadBtn').onclick = () => {
+    const blob = new Blob([toMarkdown()], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'phonotope-spike-0.0-benchmark.md';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $('clearBtn').onclick = () => { S.results = []; renderTable(); persist(); };
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && S.running && S.cfg && S.cfg.wake && !S.wake) acquireWake();
+  });
+
+  $('volumeOut').textContent = $('volume').value;
+  renderEnv();
+  restore();
+  renderTable();
+})();
+</script>
+</body>
+</html>

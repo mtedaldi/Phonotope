@@ -1,7 +1,7 @@
 // Minimal service worker for the spike: network first, cache as fallback.
 // This keeps the page loadable offline without serving stale code while testing.
-const CACHE = 'phonotope-spike-0.0-v1';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'phonotope-spike-0.0-v2';
+const FILES = ['./', './index.html', './benchmark.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)));
